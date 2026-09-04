@@ -40,7 +40,11 @@ do
     MARKER_FILE="${STATE_DIR}/${RELATIVE_PATH//\//__}.uploaded"
 
     # --- ÇAKIŞMA KONTROLÜ: OBS'te zaten varsa üzerine yazma, atla ---
-    if rclone lsf "$REMOTE_PATH" --config "$RCLONE_CONF" &>/dev/null; then
+    # NOT: 'rclone lsf' tek bir dosya yoluna bakıldığında dosya bulunamasa
+    # bile exit code 0 döner. Bu yüzden exit code değil, çıktının dolu
+    # olup olmadığı kontrol edilir.
+    EXISTING=$(rclone lsf "$REMOTE_PATH" --config "$RCLONE_CONF" 2>/dev/null)
+    if [[ -n "$EXISTING" ]]; then
         log "⚠️  ÇAKIŞMA: $REMOTE_PATH zaten OBS'te mevcut. Yükleme ATLANDI."
         continue
     fi
