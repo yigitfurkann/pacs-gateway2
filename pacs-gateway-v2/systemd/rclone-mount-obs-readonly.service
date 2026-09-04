@@ -1,0 +1,45 @@
+[Unit]
+Description=Rclone Mount OBS (READ-ONLY - Fuji/Doktor Erişimi)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+
+Environment=BUCKET_NAME=YOUR_BUCKET
+Environment=RO_MOUNT_PATH=/mnt/pacs-hot/archive-ro
+Environment=SMB_UID=1000
+Environment=SMB_GID=1000
+
+# --vfs-cache-mode full: OKUMA ÖNCELİĞİ CACHE'TEN.
+#   Doktor dosyayı açtığında önce yerel VFS cache kontrol edilir.
+#   Cache'de varsa OBS'e hiç gidilmez, doğrudan yerelden sunulur.
+#   Cache'de yoksa (ilk açılış/süre dolmuş) OBS'ten indirilir, cache'e yazılır,
+#   sonra sunulur. Doktor tarafında path ve davranış HER ZAMAN aynıdır.
+# --vfs-cache-max-age 720h: cache 30 gün canlı kalır.
+# --vfs-cache-max-size: kota dolarsa en eski kullanılan (LRU) önce atılır.
+ExecStart=/usr/bin/rclone mount obs:${BUCKET_NAME} ${RO_MOUNT_PATH} \
+  --config /etc/rclone/rclone.conf \
+  --allow-other \
+  --read-only \
+  --uid ${SMB_UID} \
+  --gid ${SMB_GID} \
+  --dir-perms 0555 \
+  --file-perms 0444 \
+  --vfs-cache-mode full \
+  --vfs-cache-max-age 720h \
+  --vfs-cache-max-size 50G \
+  --vfs-read-chunk-size 128M \
+  --vfs-read-chunk-size-limit 1G \
+  --dir-cache-time 168h \
+  --buffer-size 256M \
+  --log-level INFO \
+  --log-file /opt/pacs-gateway/logs/rclone-mount-ro.log
+
+ExecStop=/bin/fusermount -uz ${RO_MOUNT_PATH}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

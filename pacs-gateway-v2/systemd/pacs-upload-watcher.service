@@ -1,0 +1,19 @@
+[Unit]
+Description=PACS Upload Watcher (inotify close_write -> OBS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=LOCAL_DIR=/mnt/pacs-hot/local
+Environment=BUCKET_NAME=YOUR_BUCKET
+Environment=RCLONE_CONF=/etc/rclone/rclone.conf
+Environment=LOG_FILE=/opt/pacs-gateway/logs/upload-watcher.log
+Environment=STATE_DIR=/opt/pacs-gateway/state/uploaded
+ExecStart=/opt/pacs-gateway/scripts/upload-watcher.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
