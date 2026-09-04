@@ -1,0 +1,41 @@
+[Unit]
+Description=Rclone Mount OBS (READ-ONLY - Fuji/Doktor Erişimi)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+
+Environment=BUCKET_NAME=YOUR_BUCKET
+Environment=RO_MOUNT_PATH=/mnt/pacs-hot/archive-ro
+Environment=SMB_UID=1000
+Environment=SMB_GID=1000
+# Bu iki değer artık deploy.sh tarafından kurulum sırasında sorulup dinamik yazılır:
+Environment=RO_CACHE_AGE=720h
+Environment=RO_CACHE_SIZE=50G
+
+ExecStart=/usr/bin/rclone mount obs:${BUCKET_NAME} ${RO_MOUNT_PATH} \
+  --config /etc/rclone/rclone.conf \
+  --allow-other \
+  --read-only \
+  --uid ${SMB_UID} \
+  --gid ${SMB_GID} \
+  --dir-perms 0555 \
+  --file-perms 0444 \
+  --vfs-cache-mode full \
+  --vfs-cache-max-age ${RO_CACHE_AGE} \
+  --vfs-cache-max-size ${RO_CACHE_SIZE} \
+  --vfs-read-chunk-size 128M \
+  --vfs-read-chunk-size-limit 1G \
+  --dir-cache-time 168h \
+  --buffer-size 256M \
+  --log-level INFO \
+  --log-file /opt/pacs-gateway/logs/rclone-mount-ro.log
+
+ExecStop=/bin/fusermount -uz ${RO_MOUNT_PATH}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

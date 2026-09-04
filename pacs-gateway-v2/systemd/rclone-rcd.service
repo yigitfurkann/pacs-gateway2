@@ -1,0 +1,26 @@
+[Unit]
+Description=Rclone Remote Control Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+
+Environment=RC_USER=monitor
+Environment=RC_PASS=YOUR_RC_PASSWORD
+
+ExecStart=/usr/bin/rclone rcd \
+  --rc-addr=0.0.0.0:5572 \
+  --rc-user=${RC_USER} \
+  --rc-pass=${RC_PASS} \
+  --rc-enable-metrics \
+  --rc-web-gui \
+  --log-level INFO \
+  --log-file /opt/pacs-gateway/logs/rclone-rcd.log
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

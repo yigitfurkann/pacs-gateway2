@@ -1,0 +1,20 @@
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'YOUR_SMTP_EMAIL'
+  smtp_auth_username: 'YOUR_SMTP_EMAIL'
+  smtp_auth_password: 'YOUR_SMTP_APP_PASSWORD'
+  smtp_require_tls: true
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'email-admin'
+receivers:
+  - name: 'email-admin'
+    email_configs:
+      - to: 'YOUR_ALERT_EMAIL'
+        send_resolved: true
+        headers:
+          Subject: '[PACS-ALERT] {{ .GroupLabels.alertname }}'

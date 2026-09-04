@@ -1,0 +1,99 @@
+{
+  "title": "PACS Gateway Overview",
+  "uid": "pacs-gateway-overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Servis Durumu (Up/Down)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "up{job=\"rclone\"}", "legendFormat": "Rclone RC" },
+        { "expr": "up{job=\"node-exporter\"}", "legendFormat": "Node Exporter" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "red" }, { "value": 1, "color": "green" } ] }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Hot Storage Disk Kullanımı (%)",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "targets": [
+        { "expr": "100 - (node_filesystem_avail_bytes{mountpoint=\"/mnt/pacs-hot\"} / node_filesystem_size_bytes{mountpoint=\"/mnt/pacs-hot\"} * 100)", "legendFormat": "Dolu %" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "green" }, { "value": 80, "color": "yellow" }, { "value": 90, "color": "red" } ] }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "CPU Kullanımı (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        { "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)", "legendFormat": "CPU %" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" } }
+    },
+    {
+      "id": 4,
+      "title": "Disk I/O (okuma/yazma bayt/sn)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        { "expr": "rate(node_disk_read_bytes_total[5m])", "legendFormat": "Okuma - {{device}}" },
+        { "expr": "rate(node_disk_written_bytes_total[5m])", "legendFormat": "Yazma - {{device}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" } }
+    },
+    {
+      "id": 5,
+      "title": "Bellek Kullanımı",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        { "expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes", "legendFormat": "Kullanılan" },
+        { "expr": "node_memory_MemAvailable_bytes", "legendFormat": "Kullanılabilir" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+    {
+      "id": 6,
+      "title": "Ağ Trafiği (bayt/sn)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        { "expr": "rate(node_network_receive_bytes_total{device!=\"lo\"}[5m])", "legendFormat": "Alınan - {{device}}" },
+        { "expr": "rate(node_network_transmit_bytes_total{device!=\"lo\"}[5m])", "legendFormat": "Gönderilen - {{device}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" } }
+    },
+    {
+      "id": 7,
+      "title": "Sistem Uptime",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "targets": [
+        { "expr": "node_time_seconds - node_boot_time_seconds", "legendFormat": "Uptime" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    }
+  ]
+}

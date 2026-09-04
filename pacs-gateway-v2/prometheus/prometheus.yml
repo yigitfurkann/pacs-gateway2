@@ -1,0 +1,19 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+rule_files:
+  - "alert.rules.yml"
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9393']
+scrape_configs:
+  - job_name: 'rclone'
+    static_configs:
+      - targets: ['host.docker.internal:5572']
+    basic_auth:
+      username: 'YOUR_RC_USER'
+      password: 'YOUR_RC_PASSWORD'
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']

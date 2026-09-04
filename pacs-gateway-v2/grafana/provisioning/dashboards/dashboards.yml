@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  - name: 'PACS Dashboards'
+    orgId: 1
+    folder: 'PACS Gateway'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
