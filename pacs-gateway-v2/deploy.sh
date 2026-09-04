@@ -262,7 +262,11 @@ do
     RELATIVE_PATH="${FILEPATH#$LOCAL_DIR/}"
     REMOTE_PATH="obs:${BUCKET_NAME}/${RELATIVE_PATH}"
     MARKER_FILE="${STATE_DIR}/${RELATIVE_PATH//\//__}.uploaded"
-    if rclone lsf "$REMOTE_PATH" --config "$RCLONE_CONF" &>/dev/null; then
+    # NOT: 'rclone lsf' tek bir dosya yoluna bakıldığında dosya bulunamasa
+    # bile exit code 0 döner (sadece "listeleme işlemi başarılı" demektir).
+    # Bu yüzden exit code değil, ÇIKTININ DOLU OLUP OLMADIĞI kontrol edilir.
+    EXISTING=$(rclone lsf "$REMOTE_PATH" --config "$RCLONE_CONF" 2>/dev/null)
+    if [[ -n "$EXISTING" ]]; then
         log "⚠️  ÇAKIŞMA: $REMOTE_PATH zaten OBS'te mevcut. Yükleme ATLANDI."
         continue
     fi
@@ -838,6 +842,11 @@ echo ""
 echo "   📤 Fuji/PACS YAZMA paylaşımı: \\\\$PUBLIC_IP\\PACS_Local"
 echo "   📥 Doktor OKUMA paylaşımı (read-only): \\\\$PUBLIC_IP\\PACS_Archive"
 echo "   SMB Kullanıcı: $SMB_USER"
+echo ""
+echo "   🪟 Windows'tan bağlanmak için (PowerShell / cmd):"
+echo "      net use Z: \\\\$PUBLIC_IP\\PACS_Local /user:$PUBLIC_IP\\$SMB_USER <SIFRE> /persistent:yes"
+echo "      net use Y: \\\\$PUBLIC_IP\\PACS_Archive /user:$PUBLIC_IP\\$SMB_USER <SIFRE> /persistent:yes"
+echo "      (Z: Fuji/PACS yazma sürücüsü, Y: Doktor okuma sürücüsü — <SIFRE> yerine Samba şifrenizi yazın)"
 echo ""
 echo "   Grafana: http://$PUBLIC_IP:3000 (admin/admin) - PACS Gateway dashboard hazır gelir"
 echo "   Prometheus: http://$PUBLIC_IP:9090"
