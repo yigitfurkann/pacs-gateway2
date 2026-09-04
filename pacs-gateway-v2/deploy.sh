@@ -145,6 +145,32 @@ MAX_AGE_RAW=${MAX_AGE_RAW:-3h}
 MAX_AGE_HOURS=$(echo "$MAX_AGE_RAW" | sed -E 's/([0-9]+)h/\1/; s/([0-9]+)d/\1*24/' | bc 2>/dev/null || echo "3")
 
 # ============================================
+# 2.1 DOKTOR/FUJI ARŞİV MOUNT'U İÇİN VFS CACHE AYARLARI (DİNAMİK)
+# ============================================
+echo ""
+echo "📦 DOKTOR ARŞİVİ (read-only) VFS CACHE SÜRESİ:"
+echo "   Doktorun açtığı bir dosya, bu süre boyunca yerel diskte tutulur."
+echo "   Süre içinde tekrar açılırsa OBS'e HİÇ gidilmez, direkt yerelden sunulur."
+echo "   Süre dolunca dosya diskten silinir ama OBS'te kalır; bir sonraki"
+echo "   istekte otomatik ve şeffaf şekilde tekrar OBS'ten çekilir."
+echo "   Birimler: h=saat, d=gün. Örnekler: 720h (30 gün - prod), 3h (test)"
+read -p "Arşiv Cache Süresi [varsayılan: 720h]: " RO_CACHE_AGE_RAW
+RO_CACHE_AGE=${RO_CACHE_AGE_RAW:-720h}
+if [[ ! "$RO_CACHE_AGE" =~ (s|m|h|d)$ ]]; then
+    echo "⚠️  Birim belirtilmedi, saat (h) varsayılıyor."
+    RO_CACHE_AGE="${RO_CACHE_AGE}h"
+fi
+
+echo ""
+echo "📦 DOKTOR ARŞİVİ (read-only) VFS CACHE MAKSİMUM BOYUTU:"
+echo "   Yerel diskin en fazla ne kadarını bu cache için ayıracağını belirler."
+echo "   Kota dolunca en eski kullanılan dosyalar (LRU) otomatik cache'den atılır,"
+echo "   tekrar istenirse yine OBS'ten çekilir - veri kaybı olmaz."
+echo "   Örnekler: 50G, 100G, 500G, 1T"
+read -p "Arşiv Cache Max Boyut [varsayılan: 50G]: " RO_CACHE_SIZE
+RO_CACHE_SIZE=${RO_CACHE_SIZE:-50G}
+
+# ============================================
 # 3. PORT KONTROLLERİ
 # ============================================
 echo ""
@@ -187,7 +213,7 @@ fi
 # ============================================
 echo ""
 echo "📁 Dizinler oluşturuluyor..."
-sudo mkdir -p /etc/rclone /opt/pacs-gateway/{config,scripts,prometheus,alertmanager,grafana/dashboards,systemd,logs,state/uploaded}
+sudo mkdir -p /etc/rclone /opt/pacs-gateway/{config,scripts,prometheus,alertmanager,grafana/dashboards,grafana/provisioning/dashboards,grafana/provisioning/datasources,systemd,logs,state/uploaded}
 sudo mkdir -p "$LOCAL_PATH" "$RO_MOUNT_PATH"
 
 cd /opt/pacs-gateway
@@ -376,7 +402,7 @@ receivers:
 EOF
 
 # ============================================
-# 10. GRAFANA CONFIG
+# 10. GRAFANA CONFIG + PROVISIONING + DASHBOARD
 # ============================================
 echo "📝 Grafana config oluşturuluyor..."
 cat > grafana/grafana.ini <<EOF
@@ -394,6 +420,136 @@ password = $SMTP_PASS
 skip_verify = false
 from_address = $SMTP_MAIL
 from_name = PACS Grafana Alarm
+EOF
+
+echo "📝 Grafana datasource provisioning oluşturuluyor..."
+cat > grafana/provisioning/datasources/prometheus.yml <<'EOF'
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+EOF
+
+echo "📝 Grafana dashboard provisioning oluşturuluyor..."
+cat > grafana/provisioning/dashboards/dashboards.yml <<'EOF'
+apiVersion: 1
+providers:
+  - name: 'PACS Dashboards'
+    orgId: 1
+    folder: 'PACS Gateway'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+EOF
+
+echo "📝 Hazır PACS Gateway dashboard'u yazılıyor..."
+cat > grafana/provisioning/dashboards/pacs-gateway-dashboard.json <<'EOF'
+{
+  "title": "PACS Gateway Overview",
+  "uid": "pacs-gateway-overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Servis Durumu (Up/Down)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "up{job=\"rclone\"}", "legendFormat": "Rclone RC" },
+        { "expr": "up{job=\"node-exporter\"}", "legendFormat": "Node Exporter" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "red" }, { "value": 1, "color": "green" } ] }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Hot Storage Disk Kullanımı (%)",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "targets": [
+        { "expr": "100 - (node_filesystem_avail_bytes{mountpoint=\"/mnt/pacs-hot\"} / node_filesystem_size_bytes{mountpoint=\"/mnt/pacs-hot\"} * 100)", "legendFormat": "Dolu %" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "green" }, { "value": 80, "color": "yellow" }, { "value": 90, "color": "red" } ] }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "CPU Kullanımı (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        { "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)", "legendFormat": "CPU %" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" } }
+    },
+    {
+      "id": 4,
+      "title": "Disk I/O (okuma/yazma bayt/sn)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        { "expr": "rate(node_disk_read_bytes_total[5m])", "legendFormat": "Okuma - {{device}}" },
+        { "expr": "rate(node_disk_written_bytes_total[5m])", "legendFormat": "Yazma - {{device}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" } }
+    },
+    {
+      "id": 5,
+      "title": "Bellek Kullanımı",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        { "expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes", "legendFormat": "Kullanılan" },
+        { "expr": "node_memory_MemAvailable_bytes", "legendFormat": "Kullanılabilir" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+    {
+      "id": 6,
+      "title": "Ağ Trafiği (bayt/sn)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        { "expr": "rate(node_network_receive_bytes_total{device!=\"lo\"}[5m])", "legendFormat": "Alınan - {{device}}" },
+        { "expr": "rate(node_network_transmit_bytes_total{device!=\"lo\"}[5m])", "legendFormat": "Gönderilen - {{device}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" } }
+    },
+    {
+      "id": 7,
+      "title": "Sistem Uptime",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "targets": [
+        { "expr": "node_time_seconds - node_boot_time_seconds", "legendFormat": "Uptime" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    }
+  ]
+}
 EOF
 
 # ============================================
@@ -454,7 +610,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/grafana.ini:/etc/grafana/grafana.ini:ro
-      - ./provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
     environment:
       - GF_INSTALL_PLUGINS=grafana-piechart-panel
       - GF_AUTH_ANONYMOUS_ENABLED=false
@@ -491,7 +647,7 @@ EOF
 
 sudo systemctl daemon-reload
 sudo systemctl enable rclone-rcd
-sudo systemctl start rclone-rcd
+sudo systemctl restart rclone-rcd
 
 # ============================================
 # 13. SAMBA KULLANICISI OLUŞTUR
@@ -544,7 +700,6 @@ sudo chmod -R 0775 "$LOCAL_PATH"
 # 14. SYSTEMD: UPLOAD WATCHER
 # ============================================
 echo "📝 Upload watcher systemd servisi oluşturuluyor..."
-sudo cp /opt/pacs-gateway/scripts/upload-watcher.sh /opt/pacs-gateway/scripts/upload-watcher.sh
 sudo chmod +x /opt/pacs-gateway/scripts/upload-watcher.sh
 
 cat > /etc/systemd/system/pacs-upload-watcher.service <<EOF
@@ -570,7 +725,7 @@ EOF
 
 sudo systemctl daemon-reload
 sudo systemctl enable pacs-upload-watcher
-sudo systemctl start pacs-upload-watcher
+sudo systemctl restart pacs-upload-watcher
 
 # ============================================
 # 15. CRON: CLEANUP
@@ -583,9 +738,9 @@ EOF
 sudo chmod 644 /etc/cron.d/pacs-cleanup
 
 # ============================================
-# 16. SYSTEMD: READ-ONLY RCLONE MOUNT (Doktor/Fuji erişimi)
+# 16. SYSTEMD: READ-ONLY RCLONE MOUNT (Doktor/Fuji erişimi) - DİNAMİK CACHE
 # ============================================
-echo "📝 Read-only rclone mount servisi oluşturuluyor (cache-first)..."
+echo "📝 Read-only rclone mount servisi oluşturuluyor (cache-first, dinamik cache: ${RO_CACHE_AGE} / ${RO_CACHE_SIZE})..."
 cat > /etc/systemd/system/rclone-mount-obs-readonly.service <<EOF
 [Unit]
 Description=Rclone Mount OBS (READ-ONLY - Fuji/Doktor Erişimi)
@@ -603,8 +758,8 @@ ExecStart=/usr/bin/rclone mount obs:${BUCKET_NAME} ${RO_MOUNT_PATH} \
   --dir-perms 0555 \
   --file-perms 0444 \
   --vfs-cache-mode full \
-  --vfs-cache-max-age 720h \
-  --vfs-cache-max-size 50G \
+  --vfs-cache-max-age ${RO_CACHE_AGE} \
+  --vfs-cache-max-size ${RO_CACHE_SIZE} \
   --vfs-read-chunk-size 128M \
   --vfs-read-chunk-size-limit 1G \
   --dir-cache-time 168h \
@@ -621,7 +776,7 @@ EOF
 
 sudo systemctl daemon-reload
 sudo systemctl enable rclone-mount-obs-readonly
-sudo systemctl start rclone-mount-obs-readonly
+sudo systemctl restart rclone-mount-obs-readonly
 
 # ============================================
 # 17. DOCKER COMPOSE BAŞLAT
@@ -634,6 +789,7 @@ sudo docker compose up -d
 # ============================================
 echo ""
 echo "🔍 Kurulum sonrası kontroller yapılıyor..."
+sleep 3
 
 if curl -s -u ${RC_USER}:${RC_PASS} http://localhost:5572/metrics > /dev/null 2>&1; then
     echo "✅ Rclone RC API çalışıyor."
@@ -683,7 +839,7 @@ echo "   📤 Fuji/PACS YAZMA paylaşımı: \\\\$PUBLIC_IP\\PACS_Local"
 echo "   📥 Doktor OKUMA paylaşımı (read-only): \\\\$PUBLIC_IP\\PACS_Archive"
 echo "   SMB Kullanıcı: $SMB_USER"
 echo ""
-echo "   Grafana: http://$PUBLIC_IP:3000 (admin/admin)"
+echo "   Grafana: http://$PUBLIC_IP:3000 (admin/admin) - PACS Gateway dashboard hazır gelir"
 echo "   Prometheus: http://$PUBLIC_IP:9090"
 echo "   Rclone Web GUI: http://$PUBLIC_IP:5572 ($RC_USER/****)"
 echo "   Alertmanager: http://$PUBLIC_IP:9393"
@@ -695,12 +851,21 @@ echo ""
 echo "📁 Staging (yazılabilir): $LOCAL_PATH"
 echo "📁 Arşiv (read-only, OBS cache-first): $RO_MOUNT_PATH"
 echo "🕒 Yerelden silme eşiği: ${MAX_AGE_HOURS} saat (OBS'e yüklendikten sonra)"
+echo "📦 Arşiv Cache: Süre=${RO_CACHE_AGE}, Max Boyut=${RO_CACHE_SIZE}"
 echo ""
 echo "📝 HATA KONTROLÜ (Loglar):"
 echo "   Upload watcher: tail -f /opt/pacs-gateway/logs/upload-watcher.log"
 echo "   Cleanup:        tail -f /opt/pacs-gateway/logs/cleanup.log"
 echo "   RO mount:       sudo journalctl -u rclone-mount-obs-readonly -f"
 echo "   Samba:          sudo journalctl -u smbd -f"
+echo "=============================================="
+echo "   ██████╗██╗      ██████╗ ██╗   ██╗███████╗"
+echo "  ██╔════╝██║     ██╔═══██╗██║   ██║██╔════╝"
+echo "  ██║     ██║     ██║   ██║██║   ██║███████╗"
+echo "  ██║     ██║     ██║   ██║██║   ██║╚════██║"
+echo "  ╚██████╗███████╗╚██████╔╝╚██████╔╝███████║"
+echo "   ╚═════╝╚══════╝ ╚═════╝  ╚═════╝ ╚══════╝"
+echo ""
 echo "=============================================="
 echo "   🚀 Developed by Furkan YIGIT | Cloud Solution Architect | Clous Cloud"
 echo "=============================================="
